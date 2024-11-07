@@ -18,7 +18,7 @@ class PriorityQueue(object):
 
     def __init__(self):
         self.queue = []
-        self.counter=0
+        self.counter=0  ##to pop first the elements that are put first if they have the same cost
 
     # for checking if the queue is empty
     def isEmpty(self):

@@ -71,7 +71,30 @@ def forward_checking(problem: Problem, assigned_variable: str, assigned_value: A
 #            since they contain the current domains of unassigned variables only.
 def least_restraining_values(problem: Problem, variable_to_assign: str, domains: Dict[str, set]) -> List[Any]:
     #TODO: Write this function
-    NotImplemented()
+    #loop on all values in the domain of the variable
+    list_domains:Dict = {}
+    for assigned_value in domains[variable_to_assign]:   
+        #loop on all constraints
+        number_of_values = 0
+        for constrain in problem.constraints:
+            #check if the constrain is binary and the assigned variable is in the constrain
+            if isinstance(constrain, BinaryConstraint) and variable_to_assign in constrain.variables:
+                #get the other variable in the constrain
+                other_variable = constrain.get_other(variable_to_assign)
+                #check if the other variable is not assigned
+                if not other_variable in domains.keys():
+                    continue
+                #check the number of values in the new domain
+                new_domain = {value for value in domains[other_variable] if constrain.is_satisfied({variable_to_assign:assigned_value,other_variable:value})}
+                #add the number of values in the new domain to the total number of values
+                number_of_values += len(new_domain)
+        #add the number of values to the list of values
+        list_domains[assigned_value] = number_of_values
+    #sort the list of values based on the number of values
+    sorted_list = dict(sorted(list_domains.items(), key=lambda item: (-item[1], item[0])))
+    return list(sorted_list.keys())
+
+
 
 # This function should solve CSP problems using backtracking search with forward checking.
 # The variable ordering should be decided by the MRV heuristic.
@@ -82,6 +105,43 @@ def least_restraining_values(problem: Problem, variable_to_assign: str, domains:
 # IMPORTANT: To get the correct result for the explored nodes, you should check if the assignment is complete only once using "problem.is_complete"
 #            for every assignment including the initial empty assignment, EXCEPT for the assignments pruned by the forward checking.
 #            Also, if 1-Consistency deems the whole problem unsolvable, you shouldn't call "problem.is_complete" at all.
+
 def solve(problem: Problem) -> Optional[Assignment]:
     #TODO: Write this function
-    NotImplemented()
+     #apply 1-Consistency to the problem
+    if not one_consistency(problem):
+        return None
+    #start the backtracking search
+    return backtracking(problem, {},problem.domains.copy())
+   
+
+def backtracking(problem: Problem,Assignment:Dict,domain:Dict[str, set]) -> Optional[Assignment]:
+    #check if the assignment is complete
+    if problem.is_complete(Assignment):
+            return Assignment
+    #get the variable with the minimum remaining values
+    variable = min(domain, key=lambda k: len(domain[k]))    
+    #get the least restraining values for the variable
+    values = least_restraining_values(problem, variable, domain)
+
+    for value in values:
+        #create a new domain without the variable
+        new_domains = domain.copy()
+        del new_domains[variable]
+        #check if value is valid
+        if forward_checking(problem, variable, value,new_domains) :
+            #add the variable to the assignment
+            Assignment[variable] = value
+            #recursively solve the problem
+            result=backtracking(problem,Assignment,new_domains)
+            #check if the result is not none
+            if  result is not  None:
+                return result
+            #remove the variable from the assignment
+            Assignment.pop(variable)
+        
+    #return None if no solution was found
+    return None
+                
+            
+

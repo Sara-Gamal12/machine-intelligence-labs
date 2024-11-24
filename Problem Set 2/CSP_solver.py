@@ -42,22 +42,31 @@ def minimum_remaining_values(problem: Problem, domains: Dict[str, set]) -> str:
 # IMPORTANT: Don't use the domains inside the problem, use and modify the ones given by the "domains" argument 
 #            since they contain the current domains of unassigned variables only.
 def forward_checking(problem: Problem, assigned_variable: str, assigned_value: Any, domains: Dict[str, set]) -> bool:
-    #TODO: Write this function
-    #loop on all constraints
-    for constrain in problem.constraints:
-        #check if the constrain is binary and the assigned variable is in the constrain
-        if isinstance(constrain, BinaryConstraint) and assigned_variable in constrain.variables:
-            #get the other variable in the constrain
-            other_variable = constrain.get_other(assigned_variable)
-            #check if the other variable is not assigned
-            if not other_variable in domains.keys():
-                continue
-            #update the other variable's domain to only include the values that satisfy the binary constraint with the assigned variable
-            new_domain = {value for value in domains[other_variable] if constrain.is_satisfied({assigned_variable:assigned_value,other_variable:value})}
-            domains[other_variable] = new_domain
-            #If any variable's domain becomes empty, return False
-            if not new_domain:
-                return False
+    # Pre-filter constraints involving the target variable
+    relevant_constraints = [
+        constraint for constraint in problem.constraints
+        if isinstance(constraint, BinaryConstraint) and assigned_variable in constraint.variables
+    ]
+    
+    # Loop on all relevant constraints
+    for constraint in relevant_constraints:
+        # Get the other variable in the constraint
+        other_variable = constraint.get_other(assigned_variable)
+        
+        # Check if the other variable is not assigned
+        if other_variable not in domains:
+            continue
+        
+        # Update the other variable's domain to only include the values that satisfy the binary constraint with the assigned variable
+        new_domain = {value for value in domains[other_variable] if constraint.is_satisfied({assigned_variable: assigned_value, other_variable: value})}
+        
+        # If any variable's domain becomes empty, return False
+        if not new_domain:
+            return False
+        
+        # Update the domain in place
+        domains[other_variable] = new_domain
+    
     return True
 # This function should return the domain of the given variable order based on the "least restraining value" heuristic.
 # IMPORTANT: This function should not modify any of the given arguments.
@@ -70,31 +79,40 @@ def forward_checking(problem: Problem, assigned_variable: str, assigned_value: A
 # IMPORTANT: Don't use the domains inside the problem, use and modify the ones given by the "domains" argument 
 #            since they contain the current domains of unassigned variables only.
 def least_restraining_values(problem: Problem, variable_to_assign: str, domains: Dict[str, set]) -> List[Any]:
-    #TODO: Write this function
-    #loop on all values in the domain of the variable
-    list_domains:Dict = {}
-    for assigned_value in domains[variable_to_assign]:   
-        #loop on all constraints
-        number_of_values = 0
-        for constrain in problem.constraints:
-            #check if the constrain is binary and the assigned variable is in the constrain
-            if isinstance(constrain, BinaryConstraint) and variable_to_assign in constrain.variables:
-                #get the other variable in the constrain
-                other_variable = constrain.get_other(variable_to_assign)
-                #check if the other variable is not assigned
-                if not other_variable in domains.keys():
-                    continue
-                #check the number of values in the new domain
-                new_domain = {value for value in domains[other_variable] if constrain.is_satisfied({variable_to_assign:assigned_value,other_variable:value})}
-                #add the number of values in the new domain to the total number of values
-                number_of_values += len(new_domain)
-        #add the number of values to the list of values
-        list_domains[assigned_value] = number_of_values
-    #sort the list of values based on the number of values
-    sorted_list = dict(sorted(list_domains.items(), key=lambda item: (-item[1], item[0])))
-    return list(sorted_list.keys())
+    value_impact = []
+    # Pre-filter constraints involving the target variable
+    relevant_constraints = [
+        constraint for constraint in problem.constraints
+        if isinstance(constraint, BinaryConstraint) and variable_to_assign in constraint.variables
+    ]
 
+    # Loop on variable domain
+    for assigned_value in domains[variable_to_assign]:
+        total_remaining_values = 0
 
+        for constraint in relevant_constraints:
+            # Get the other variable in the constraint
+            other_variable = constraint.get_other(variable_to_assign)
+
+            # Check if the other variable is not assigned
+            if other_variable not in domains:
+                continue
+
+            # Compute the reduced domain for the other variable
+            new_domain_size = sum(
+                1 for value in domains[other_variable]
+                if constraint.is_satisfied({variable_to_assign: assigned_value, other_variable: value})
+            )
+            total_remaining_values += new_domain_size
+
+        # Track the assigned value and its impact
+        value_impact.append((assigned_value, total_remaining_values))
+
+    # Sort values by the least impact (higher remaining values first) and by natural order for ties
+    value_impact.sort(key=lambda x: (-x[1], x[0]))
+
+    # Return only the values, sorted by least restraining impact
+    return [value for value, _ in value_impact]
 
 # This function should solve CSP problems using backtracking search with forward checking.
 # The variable ordering should be decided by the MRV heuristic.
@@ -107,41 +125,37 @@ def least_restraining_values(problem: Problem, variable_to_assign: str, domains:
 #            Also, if 1-Consistency deems the whole problem unsolvable, you shouldn't call "problem.is_complete" at all.
 
 def solve(problem: Problem) -> Optional[Assignment]:
-    #TODO: Write this function
-     #apply 1-Consistency to the problem
+    # Apply 1-Consistency to the problem
     if not one_consistency(problem):
         return None
-    #start the backtracking search
-    return backtracking(problem, {},problem.domains.copy())
-   
+    # Start the backtracking search
+    return backtracking(problem, {}, problem.domains.copy())
 
-def backtracking(problem: Problem,Assignment:Dict,domain:Dict[str, set]) -> Optional[Assignment]:
-    #check if the assignment is complete
-    if problem.is_complete(Assignment):
-            return Assignment
-    #get the variable with the minimum remaining values
-    variable = min(domain, key=lambda k: len(domain[k]))    
-    #get the least restraining values for the variable
-    values = least_restraining_values(problem, variable, domain)
+def backtracking(problem: Problem, assignment: Dict[str, Any], domains: Dict[str, set]) -> Optional[Assignment]:
+    # Check if the assignment is complete
+    if problem.is_complete(assignment):
+        return assignment
+
+    # Get the variable with the minimum remaining values
+    variable = minimum_remaining_values(problem, domains)
+    # Get the least restraining values for the variable
+    values = least_restraining_values(problem, variable, domains)
 
     for value in values:
-        #create a new domain without the variable
-        new_domains = domain.copy()
+        # Create a new domain without the variable
+        new_domains = domains.copy()
         del new_domains[variable]
-        #check if value is valid
-        if forward_checking(problem, variable, value,new_domains) :
-            #add the variable to the assignment
-            Assignment[variable] = value
-            #recursively solve the problem
-            result=backtracking(problem,Assignment,new_domains)
-            #check if the result is not none
-            if  result is not  None:
+        # Check if value is valid
+        if forward_checking(problem, variable, value, new_domains):
+            # Add the variable to the assignment
+            assignment[variable] = value
+            # Recursively solve the problem
+            result = backtracking(problem, assignment, new_domains)
+            # Check if the result is not None
+            if result is not None:
                 return result
-            #remove the variable from the assignment
-            Assignment.pop(variable)
-        
-    #return None if no solution was found
-    return None
-                
-            
+            # Remove the variable from the assignment
+            del assignment[variable]
 
+    # Return None if no solution was found
+    return None
